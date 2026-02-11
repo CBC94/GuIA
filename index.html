@@ -742,6 +742,34 @@
             gap: 0.75rem;
         }
 
+        .config-field {
+            margin-top: 0.75rem;
+        }
+
+        .config-field label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.35rem;
+            text-transform: uppercase;
+        }
+
+        .config-input {
+            width: 100%;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 0.625rem 0.75rem;
+            font-size: 0.875rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .config-help {
+            margin-top: 0.4rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
         .spinner {
             width: 18px;
             height: 18px;
@@ -971,6 +999,11 @@
             <div class="section-divider"></div>
 
             <h3>⚙️ Configuración</h3>
+            <div class="config-field">
+                <label for="llamaEndpointInput">Endpoint Llama / Ollama</label>
+                <input id="llamaEndpointInput" class="config-input" type="text" placeholder="http://127.0.0.1:11434/api/chat" onblur="saveLlamaEndpoint(this.value)">
+                <p class="config-help">Si usas servidor remoto o proxy, indícalo aquí (ej: <code>/api/ollama/chat</code>).</p>
+            </div>
             <button class="action-btn action-btn-primary" onclick="exportChat()" style="font-size: 0.8125rem;">
                 📥 Exportar Chat
             </button>
@@ -994,6 +1027,7 @@
 
         let ANTHROPIC_API_KEY = localStorage.getItem('guia_peset_api_key') || '';
         let MODEL_PROVIDER = localStorage.getItem('guia_model_provider') || 'llama';
+        let LLAMA_ENDPOINT = localStorage.getItem('guia_llama_endpoint') || 'http://127.0.0.1:11434/api/chat';
         let currentAPISource = 'cima';
         let conversationHistory = [];
         let uploadedDocuments = [];
@@ -1095,6 +1129,33 @@ Tienes acceso a:
             document.getElementById('statsScreenOverlay').classList.remove('active');
         }
 
+        function normalizeLlamaEndpoint(value) {
+            const raw = (value || '').trim();
+            if (!raw) return 'http://127.0.0.1:11434/api/chat';
+            if (raw.startsWith('/')) return raw;
+            if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
+                return `http://${raw}`;
+            }
+            return raw;
+        }
+
+        function saveLlamaEndpoint(value) {
+            LLAMA_ENDPOINT = normalizeLlamaEndpoint(value);
+            localStorage.setItem('guia_llama_endpoint', LLAMA_ENDPOINT);
+            const input = document.getElementById('llamaEndpointInput');
+            if (input) input.value = LLAMA_ENDPOINT;
+        }
+
+        function getLlamaCandidateEndpoints() {
+            const candidates = [LLAMA_ENDPOINT, '/api/ollama/chat', '/api/chat', 'http://localhost:11434/api/chat'];
+            return [...new Set(candidates.map(normalizeLlamaEndpoint))];
+        }
+
+        function initConfigInputs() {
+            const input = document.getElementById('llamaEndpointInput');
+            if (input) input.value = LLAMA_ENDPOINT;
+        }
+
         function updateModelBadges() {
             const claudeDot = document.getElementById('claudeDot');
             const llamaDot = document.getElementById('llamaDot');
@@ -1112,6 +1173,7 @@ Tienes acceso a:
             MODEL_PROVIDER = provider;
             localStorage.setItem('guia_model_provider', provider);
             updateModelBadges();
+        initConfigInputs();
 
             if (provider === 'claude') {
                 if (ANTHROPIC_API_KEY) {
@@ -1120,7 +1182,7 @@ Tienes acceso a:
                     showAPIKeyModal();
                 }
             } else {
-                addMessage('assistant', '<div class="alert-box alert-info"><span>🦙</span><div><strong>Modo Llama Local activo.</strong> No necesitas API key si tienes Ollama en ejecución.</div></div>');
+                addMessage('assistant', '<div class="alert-box alert-info"><span>🦙</span><div><strong>Modo Llama Local activo.</strong> Endpoint actual: <code>' + escapeHTML(LLAMA_ENDPOINT) + '</code></div></div>');
             }
         }
 
@@ -1518,36 +1580,56 @@ Tienes acceso a:
 
             try {
                 const messages = buildConversationMessages(message);
-                const response = await fetch('http://127.0.0.1:11434/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: 'llama3.1:8b',
-                        messages,
-                        stream: false,
-                        options: { temperature: 0.1 }
-                    })
-                });
+                const endpoints = getLlamaCandidateEndpoints();
+                let lastError = null;
 
-                if (!response.ok) {
-                    throw new Error(`No se pudo conectar con Llama local (HTTP ${response.status})`);
+                for (const endpoint of endpoints) {
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                model: 'llama3.1:8b',
+                                messages,
+                                stream: false,
+                                options: { temperature: 0.1 }
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        const assistantMessage = data?.message?.content || 'No se obtuvo respuesta del modelo local.';
+
+                        typingIndicator.classList.remove('active');
+                        addMessage('assistant', formatAssistantText(assistantMessage));
+
+                        conversationHistory.push({
+                            user: message,
+                            assistant: assistantMessage,
+                            timestamp: new Date().toISOString()
+                        });
+
+                        if (endpoint !== LLAMA_ENDPOINT) {
+                            saveLlamaEndpoint(endpoint);
+                        }
+                        return;
+                    } catch (endpointError) {
+                        lastError = `${endpoint} → ${endpointError.message}`;
+                    }
                 }
 
-                const data = await response.json();
-                const assistantMessage = data?.message?.content || 'No se obtuvo respuesta del modelo local.';
+                const mixedContentHint = window.location.protocol === 'https:' && LLAMA_ENDPOINT.startsWith('http://')
+                    ? '<br><strong>Nota:</strong> si abres GuIA en HTTPS, un endpoint HTTP puede bloquearse por mixed content. Usa un proxy HTTPS (por ejemplo <code>/api/ollama/chat</code>).'
+                    : '';
 
-                typingIndicator.classList.remove('active');
-                addMessage('assistant', formatAssistantText(assistantMessage));
-
-                conversationHistory.push({
-                    user: message,
-                    assistant: assistantMessage,
-                    timestamp: new Date().toISOString()
-                });
+                throw new Error(`No responde ningún endpoint (${escapeHTML(getLlamaCandidateEndpoints().join(', '))}). Último error: ${escapeHTML(lastError || 'desconocido')}.${mixedContentHint}`);
             } catch (error) {
                 console.error('Error Llama local:', error);
                 typingIndicator.classList.remove('active');
-                addMessage('assistant', '<div class="alert-box alert-warning"><span>⚠️</span><div><strong>Llama local no disponible:</strong> Inicia Ollama y el modelo con <code>ollama serve</code> y <code>ollama run llama3.1:8b</code>, o cambia a Claude.</div></div>');
+                addMessage('assistant', `<div class="alert-box alert-warning"><span>⚠️</span><div><strong>Llama local no disponible:</strong> ${error.message}<br>Revisa <code>ollama serve</code>, el modelo <code>llama3.1:8b</code> y/o configura el endpoint en Estadísticas → Configuración.</div></div>`);
             } finally {
                 sendBtn.disabled = false;
                 sendBtn.innerHTML = 'Enviar';

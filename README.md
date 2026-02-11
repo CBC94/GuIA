@@ -50,3 +50,18 @@ Si prefieres Claude:
 
 - Si Llama local no está disponible, la app mostrará un aviso con los pasos para iniciarlo.
 - Si no hay API key y eliges Claude, la app abrirá el modal de configuración.
+
+
+## Solución de problemas de conexión (Llama)
+
+Si aparece "Llama local no disponible":
+
+1. Abre **Estadísticas → Configuración** y revisa el campo **Endpoint Llama / Ollama**.
+2. Prueba primero con `http://127.0.0.1:11434/api/chat` (local).
+3. Si tu GuIA se sirve en HTTPS, usa un proxy HTTPS (por ejemplo `/api/ollama/chat`) para evitar bloqueo por *mixed content*.
+4. Verifica Ollama:
+
+```bash
+ollama serve
+ollama run llama3.1:8b
+```
