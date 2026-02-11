@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -709,13 +709,18 @@
     </style>
 </head>
 <body>
-    <!-- Modal API Key - DESACTIVADO en versión compartida -->
-    <div class="modal-overlay" id="apiKeyModal" style="display: none;">
+    <!-- Modal API Key - Versión compartida del equipo -->
+    <div class="modal-overlay" id="apiKeyModal">
         <div class="modal">
-            <h2>🔑 Versión Compartida H.U. Dr. Peset</h2>
-            <p>Esta es la versión compartida del servicio. La API key ya está configurada.</p>
+            <h2>🔑 Configuración de Equipo</h2>
+            <p><strong>Primera vez usando GuIA del H.U. Dr. Peset</strong></p>
+            <p style="margin-top: 0.5rem; font-size: 0.875rem;">Tu coordinador/a te proporcionará la API key del servicio. Introdúcela aquí una sola vez:</p>
+            <input type="password" id="apiKeyInput" placeholder="Pega aquí la API key que te dieron">
+            <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(14, 165, 233, 0.1); border-radius: 6px; font-size: 0.8125rem;">
+                <strong>ℹ️ Nota:</strong> La API key se guardará en tu navegador. No la compartas fuera del equipo.
+            </div>
             <div class="modal-buttons">
-                <button class="modal-btn modal-btn-primary" onclick="closeModal()">Entendido</button>
+                <button class="modal-btn modal-btn-primary" onclick="saveAPIKey()">Guardar y Empezar</button>
             </div>
         </div>
     </div>
@@ -730,8 +735,8 @@
                 </div>
             </div>
             <div class="header-status">
-                <span class="status-badge" id="claudeStatus" title="Versión compartida - API key preconfigurada">
-                    <span class="status-dot" id="claudeDot"></span>
+                <span class="status-badge" id="claudeStatus" onclick="showAPIKeyModal()" style="cursor: pointer;">
+                    <span class="status-dot inactive" id="claudeDot"></span>
                     Claude Sonnet 4
                 </span>
                 <span class="status-badge">🇪🇸 CIMA</span>
@@ -823,11 +828,11 @@
                                 <li><strong>🌐 APIs Internacionales:</strong> CIMA, FDA, EMA, PubMed, ClinicalTrials</li>
                                 <li><strong>📋 Protocolos:</strong> Guía Farmacoterapéutica, Actas CFT, Financiación</li>
                             </ul>
-                            <div class="alert-box alert-info" style="margin-top: 1rem;">
+                            <div class="alert-box alert-info" style="margin-top: 1rem;" id="apiKeyWarning">
                                 <span>ℹ️</span>
                                 <div>
-                                    <strong>Versión compartida H.U. Dr. Peset</strong><br>
-                                    Esta aplicación está lista para usar. Tu consulta será procesada por Claude Sonnet 4 con acceso a todas las bases de datos médicas.
+                                    <strong>Versión de Equipo H.U. Dr. Peset</strong><br>
+                                    Para empezar, introduce la API key del servicio que te proporcionó tu coordinador/a. Click en el badge "Claude Sonnet 4" arriba.
                                 </div>
                             </div>
                             <p style="margin-top: 1rem; font-size: 0.875rem;">¿En qué puedo ayudarte hoy?</p>
@@ -898,14 +903,14 @@
             trials: 'https://clinicaltrials.gov/api/v2'
         };
 
-        let ANTHROPIC_API_KEY = atob("c2stYW50LWFwaTAzLUJBUGVaU1l6WWFsakkyWVRncFRZbmtJZy1HXzFCVkZqaWhULV9waVY3Uy1vVkJpV3VFZ2Z1YUIydnJaNWthYnp0T2x1OHIwTVRMWEYwNWVHV1B3c3dBLVRMaDFUZ0FB");
+        let ANTHROPIC_API_KEY = localStorage.getItem('guia_peset_api_key') || '';
         let currentAPISource = 'cima';
         let conversationHistory = [];
         let uploadedDocuments = [];
         let queryCount = 0;
         let apiCallCount = 0;
 
-        // Versión compartida del H.U. Dr. Peset - API key preconfigurada
+        // Versión compartida - La API key se comparte entre el equipo
 
         // Sistema de instrucciones
         const SYSTEM_INSTRUCTIONS = `Eres GuIA, el asistente virtual experto en farmacoterapia del Hospital Universitario Dr. Peset v.1.
@@ -978,10 +983,14 @@ Tienes acceso a:
 - Capacidad de búsqueda web cuando necesites información actualizada`;
 
         // ============================================
-        // GESTIÓN API KEY - Versión compartida
+        // GESTIÓN API KEY - Versión compartida del equipo
         // ============================================
         function showAPIKeyModal() {
-            // No hacer nada - versión compartida
+            document.getElementById('apiKeyModal').classList.add('active');
+            const input = document.getElementById('apiKeyInput');
+            if (ANTHROPIC_API_KEY) {
+                input.value = ANTHROPIC_API_KEY;
+            }
         }
 
         function closeModal() {
@@ -989,17 +998,44 @@ Tienes acceso a:
         }
 
         function saveAPIKey() {
-            // No hacer nada - versión compartida
+            const key = document.getElementById('apiKeyInput').value.trim();
+            if (key && key.startsWith('sk-ant-')) {
+                ANTHROPIC_API_KEY = key;
+                localStorage.setItem('guia_peset_api_key', key);
+                updateClaudeStatus(true);
+                closeModal();
+                addMessage('assistant', '<div class="alert-box alert-success"><span>✅</span><div><strong>¡Configuración completada!</strong><br>Ya puedes usar GuIA. La API key se ha guardado en tu navegador.</div></div>');
+                
+                // Ocultar warning si existe
+                const warning = document.getElementById('apiKeyWarning');
+                if (warning) warning.style.display = 'none';
+            } else {
+                alert('Por favor, introduce una API key válida de Anthropic (empieza con sk-ant-)');
+            }
         }
 
         function updateClaudeStatus(active) {
-            // Claude siempre activo en versión compartida
             const dot = document.getElementById('claudeDot');
-            dot.classList.remove('inactive');
+            const badge = document.getElementById('claudeStatus');
+            
+            if (active) {
+                dot.classList.remove('inactive');
+                badge.title = 'Claude configurado - Click para cambiar API key';
+            } else {
+                dot.classList.add('inactive');
+                badge.title = 'Click para configurar API key del equipo';
+            }
         }
 
-        // Actualizar estado al cargar
-        updateClaudeStatus(true);
+        // Verificar API key al cargar
+        if (ANTHROPIC_API_KEY) {
+            updateClaudeStatus(true);
+            const warning = document.getElementById('apiKeyWarning');
+            if (warning) warning.style.display = 'none';
+        } else {
+            // Si no hay API key, mostrar modal
+            setTimeout(() => showAPIKeyModal(), 500);
+        }
 
         // ============================================
         // GESTIÓN DE DOCUMENTOS
@@ -1275,7 +1311,11 @@ Tienes acceso a:
         }
 
         async function sendToClaude(message) {
-            // API key ya configurada en versión compartida
+            if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === '') {
+                addMessage('assistant', '<div class="alert-box alert-warning"><span>⚠️</span><div><strong>Configuración requerida:</strong> Necesitas introducir la API key del equipo. Click en el badge "Claude Sonnet 4" arriba.</div></div>');
+                showAPIKeyModal();
+                return;
+            }
 
             const typingIndicator = document.getElementById('typingIndicator');
             typingIndicator.classList.add('active');
